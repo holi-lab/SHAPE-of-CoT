@@ -116,23 +116,21 @@ Configure `DIRS`, `MODELS`, and sampling parameters at the top of the script. Th
 
 Output: `data/llm-label-heuristics/`
 
-**Heuristic codes** are grounded in Rott (2014) and Favier & Dorier (2024):
+**Heuristic codes** (Appendix A):
 
 | Code | Strategy |
 |---|---|
 | H1 | Changing the register of semiotic representation |
 | H2 | Cognitive Reinterpretation |
-| H3 | Introduce Symbolic Representation / Formalization |
+| H3 | Introduce Symbolic Representation, Formalization, and Structural Augmentation |
 | H4 | Problem Classification / Rephrase the Problem and Goal |
-| H5 | Structural Augmentation (auxiliary objects / lemmas) |
-| H6 | Wishful Thinking — simplify or relax constraints |
-| H7 | Explicit Case Analysis / Decompose into Subproblems |
-| H8 | Analogy to known problems |
-| H9 | Arguing by Contradiction |
-| H10 | Presenting Related Theorems, Tools, or Properties |
-| H11 | Experimental & Pattern Exploration |
-| H12 | Working Backward |
-| H13 | Verification and Looking Back |
+| H5 | Wishful Thinking — simplify or reduce the problem and conditions |
+| H6 | Explicit Case Analysis / Decompose into Subproblems |
+| H7 | Arguing by Contradiction |
+| H8 | Analogy and Presenting Related Theorems |
+| H9 | Experimental and Pattern Exploration |
+| H10 | Working Backward |
+| H11 | Verification and Looking Back |
 
 ---
 
