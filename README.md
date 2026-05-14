@@ -66,14 +66,6 @@ bash vllm_build.sh
 
 The script auto-detects CUDA and tries wheel variants in order: `cu126 → cu128 → cu130 → cpu`. If all wheels fail, it falls back to a source build. On success it registers an `ipykernel` as **Python (vllm-dev)** for notebook use.
 
-**Key environment variables (all optional):**
-
-| Variable | Default | Description |
-|---|---|---|
-| `ENV_NAME` | `vllm-dev` | Conda environment name |
-| `PYTHON_VERSION` | `3.10` | Python version |
-| `CUDA_VARIANTS` | auto | Override wheel search order, e.g. `"cu130 cpu"` |
-
 ---
 
 ## 2. Tagging Pipeline
@@ -92,15 +84,6 @@ Splits raw CoT traces into *Content Units*: cohesive blocks where the solver for
 bash run_content_unit.sh
 ```
 
-Key options (set as environment variables or edit the script):
-
-| Variable | Default | Description |
-|---|---|---|
-| `INPUT_FOLDER` | `data/raw` | Folder with `*.jsonl` / `*.json` input files |
-| `MODEL` | `google/gemini-2.5-flash-lite` | LLM used for chunking |
-| `WORKERS` | `10` | Number of concurrent workers |
-
-Output: `data/content_unit/` (chunked files) and `data/raw/` (normalized raw files).
 
 ---
 
