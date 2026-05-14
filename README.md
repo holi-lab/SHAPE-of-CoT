@@ -1,8 +1,36 @@
-# SHAPE: Structured Heuristic Analysis of Problem-solving in rEasoning models
+# SHAPE: Semantic-space and Heuristic Analysis for Problem-solving Evolution
 
-> **Dataset release coming soon.**
+SHAPE analyzes Chain-of-Thought (CoT) in math reasoning at the level where problem solving actually happens: not only surface text, self-revision markers, or generic reasoning episodes, but the model’s evolving mathematical interpretation of the problem.
 
-SHAPE is a framework for analyzing the reasoning process of Large Reasoning Models (LRMs) through the lens of mathematical heuristics. We segment Chain-of-Thought (CoT) traces into *Content Units* (plan–execution cycles), label each unit with expert-grounded heuristic codes (H1–H13), and track *Semantic Space* transitions to derive interpretable metrics that predict answer correctness and characterize model capability.
+We represent each CoT as a sequence of observable heuristic actions and semantic-space transitions. This makes it possible to ask whether a model stays within one mathematical framing, shifts to another, returns to a previous one, or scatters effort across many disconnected interpretations.
+
+
+## Why SHAPE?
+
+Recent reasoning models often generate long CoT traces, but we still know little about what mathematical activity is actually taking place inside them. A reasoning trace may contain planning, checking, or self-correction markers, yet still fail to reveal how the model is representing and transforming the mathematical problem itself.
+
+SHAPE addresses this by borrowing two concepts from mathematics education:
+
+- **Heuristics**: local mathematical actions, such as introducing notation, changing representation, trying cases, working backward, or verifying a result.
+- **Semantic spaces**: trajectory-relative mathematical interpretations of the problem, defined by the objects, constraints, goals, and operations the solver is currently using.
+
+Together, these allow us to analyze not only what actions appear in a CoT, but how those actions are organized across changing mathematical interpretations.
+
+## What the paper shows
+
+Using SHAPE, we study how LLMs organize mathematical reasoning across semantic spaces and heuristics.
+
+Our main findings are:
+
+1. **Correct solutions tend to stay focused.**  
+   Successful trajectories often concentrate heuristic effort within a small number of semantic spaces, while incorrect trajectories revisit or scatter across spaces without making progress.
+
+2. **Hard perturbations reveal adaptive but error-like reasoning.**  
+   When a problem looks similar but requires a different solution method, models change their heuristic choices but often fail to reorganize their semantic-space structure effectively.
+
+3. **RL post-training narrows heuristic usage.**  
+   Post-trained models concentrate successful trajectories into a narrower region of the base model’s heuristic distribution, suggesting structural mode-seeking at the level of mathematical strategy.
+
 
 ---
 
