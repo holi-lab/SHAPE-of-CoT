@@ -1,0 +1,24 @@
+# Ignore everything by default
+*
+!*/
+
+# Whitelist essential configuration
+!README.md
+!requirements.txt
+!.gitignore
+!*.py
+!*.sh
+!*.md
+!*.ipynb
+
+# Ignore data and runtime artifacts
+data/
+logs/
+vllm-src/
+.venv-vllm/
+
+# Always ignore these
+__pycache__/
+.env
+*.pyc
+.ipynb_checkpoints/
