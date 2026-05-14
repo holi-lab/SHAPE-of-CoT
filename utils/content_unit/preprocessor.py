@@ -62,15 +62,18 @@ def merge_short_chunks(chunks):
         
     return merged
 
-def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai/grok-4.1-fast"):
+def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai/grok-4.1-fast", client=None, force_json=False):
     """
-    Chunk sentences using LLM (Gemini via OpenRouter).
+    Chunk sentences using LLM (OpenRouter or vLLM via HFClient).
     
     Args:
         sentences (list): List of sentence strings.
         dataset_name (str): Name of the dataset for logging.
         problem_index (str/int): Index of the problem for logging.
-        model (str): Model identifier for OpenRouter (default: x-ai/grok-4.1-fast).
+        model (str): Model identifier (default: x-ai/grok-4.1-fast).
+        client: Pre-initialized client object (HFClient or OpenAI). If None, uses OpenRouter.
+        force_json (bool): If True, pass response_format={"type": "json_object"} to enforce JSON output.
+                           Automatically enabled for vLLM (HFClient) backend via StructuredOutputsParams.
     
     Returns:
         list: List of chunk dictionaries with 'index', 'sentence' (merged), etc.
@@ -78,19 +81,20 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
     if not sentences:
         return []
 
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    # Initialize OpenAI client for OpenRouter
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        print("Warning: OPENROUTER_API_KEY not found in environment variables.")
-        return []
+    if client is None:
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        # Initialize OpenAI client for OpenRouter
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            print("Warning: OPENROUTER_API_KEY not found in environment variables.")
+            return []
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key, 
-    )
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key, 
+        )
     
     # Load Guidebook Content
     try:
@@ -165,16 +169,17 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
             f"2. YOUR TASK is to segment the sentences starting from index {target_start_idx + 1} up to roughly index {target_start_idx + 50}.\n"
             f"3. START grouping sentences from index {target_start_idx + 1}. Do NOT include earlier indices in your output.\n"
             f"4. The target end index is {target_start_idx + 50}. If a logical unit extends beyond this index, do not split the unit; instead, STOP grouping before this unit begins and leave it for the next batch.\n"
-            f"5. **Group by Same Tag**: If consecutive sentences share the EXACT SAME ontology tag (e.g., both are H13 or H1), you MUST merge them into a SINGLE chunk. Do not output multiple small chunks with identical tags.\n"
+            f"5. **Group by Same Tag**: If consecutive sentences share the EXACT SAME ontology tag (e.g., both are H11 or H1), you MUST merge them into a SINGLE chunk. Do not output multiple small chunks with identical tags.\n"
             f"6. **NO INDEPENDENT MONITORING/WEAK SENTENCES**: Sentences like 'I think that's solid.', 'Okay.', 'Let me check.', 'Wait.' are NOT independent strategies. You MUST merge them with the preceding or following unit. NEVER output a chunk containing only such a sentence.\n"
-            f"7. **ABSOLUTELY NO 'N/A' CODES**: You must NEVER use 'N/A' or empty lists in the 'codes' field. Every chunk must have at least one valid heuristic code (H1-H13). If a segment appears to be pure execution without a clear heuristic, merge it with the preceding or following chunk that contains the strategy it implements or supports. Examples: merge calculations with the H13 verification they support, merge coordinate listings with the H10 formula application they serve.\n"
+            f"7. **ABSOLUTELY NO 'N/A' CODES**: You must NEVER use 'N/A' or empty lists in the 'codes' field. Every chunk must have at least one valid heuristic code (H1-H11, with sub-codes H3a/b, H4a/b, H8a/b, H9a/b, H11a-f when applicable). If a segment appears to be pure execution without a clear heuristic, merge it with the preceding or following chunk that contains the strategy it implements or supports. Examples: merge calculations with the H11 verification they support, merge coordinate listings with the H8b formula application they serve.\n"
             f"8. **NO SINGLE-SENTENCE CHUNKS**: Do NOT create chunks with only a single short sentence (under ~15 words), especially for monitoring, confirmation, or transitional statements. Examples: merge 'Same as before!' with the preceding verification chunk, merge 'Now let's...' with the following calculation chunk, merge 'Wait, let me check.' with the chunk being checked. Exception: A single sentence can be its own chunk ONLY if it contains substantial strategic content (e.g., complete problem classification, full theorem statement, complete case analysis setup).\n"
-            f"9. **CRITICAL - VALID CODES ONLY**: The ONLY valid ontology codes are H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12, H13. NEVER use N1, N2, N3, N4, N5 or any other codes starting with letters other than H. These N-codes do NOT exist in our taxonomy. If you encounter pure execution/calculation content, merge it with the heuristic chunk it supports - do NOT create a separate chunk with made-up codes like 'N2' or 'Technical Performance'.\n"
-            f"10. Output strictly in JSON format. For each item, YOU MUST INCLUDE:\n"
+            f"9. **CRITICAL - VALID CODES ONLY**: The ONLY valid ontology codes are H1, H2, H3 (H3a, H3b), H4 (H4a, H4b), H5, H6, H7, H8 (H8a, H8b), H9 (H9a, H9b), H10, H11 (H11a-f). NEVER use H12, H13, N1, N2, N3, N4 or any other codes starting with letters other than H. If you encounter pure execution/calculation content, merge it with the heuristic chunk it supports - do NOT create a separate chunk with made-up codes like 'N2' or 'Technical Performance'.\n"
+            f"10. Output strictly in JSON object format with a 'chunks' key containing a list. Each item in the list MUST INCLUDE:\n"
             f"   - 'start_index': The 1-based index of the first sentence in this chunk.\n"
             f"   - 'end_index': The 1-based index of the last sentence in this chunk.\n"
-            f"   - 'codes': List containing ONLY valid codes from H1-H13, never N-codes, never 'N/A', never empty.\n"
+            f"   - 'codes': List containing ONLY valid codes from H1-H11 (with sub-codes), never H12/H13, never N-codes, never 'N/A', never empty.\n"
             f"   - 'reasoning': Reasoning for the codes.\n"
+            f"   Example format: {{\"chunks\": [{{\"start_index\": 1, \"end_index\": 5, \"codes\": [\"H4\"], \"reasoning\": \"...\"}}]}}\n"
             f"11. **CONCISE REASONING**: Keep the 'reasoning' field extremely short (1-2 sentences max). Do NOT quote long blocks of text.\n"
             f"12. **NO INTERNAL DOUBLE QUOTES**: Use single quotes (') for any quotes inside the reasoning text to ensure valid JSON.\n"
         )
@@ -196,14 +201,14 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
         max_retries = 3
         response_json = []
         
+        call_kwargs = {"model": model, "messages": messages, "max_tokens": 10000}
+        if force_json:
+            call_kwargs["response_format"] = {"type": "json_object"}
+            call_kwargs["enable_thinking"] = False  # vLLM: disable thinking to get clean JSON output
+
         for attempt in range(max_retries):
             try:
-                completion = client.chat.completions.create(
-                    model=model, 
-                    messages=messages,
-                    # Removed response_format={"type": "json_object"} as it may conflict with list outputs
-                    max_tokens=10000
-                )
+                completion = client.chat.completions.create(**call_kwargs)
                 
                 finish_reason = completion.choices[0].finish_reason
                 content = completion.choices[0].message.content
@@ -232,7 +237,18 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
                         s = s.strip()
                         if not s: return s
 
-                        # Phase 0: Try to truncate to the last complete object in a list
+                        # Phase 0: Try to truncate to the last complete chunk object inside {"chunks": [...]}
+                        if s.startswith('{'):
+                            last_brace = s.rfind('}')
+                            if last_brace != -1:
+                                try:
+                                    # Try closing the chunks array and outer object
+                                    potential_s = s[:last_brace+1] + ']}'
+                                    json.loads(potential_s, strict=False)
+                                    return potential_s
+                                except:
+                                    pass
+                        # Fallback: plain array
                         if s.startswith('['):
                             last_brace = s.rfind('}')
                             if last_brace != -1:
@@ -303,16 +319,20 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
                         print(f"Saved failed response to {debug_file}")
                         raise
 
-                # Handle list or dict wrapper
+                # Unwrap {"chunks": [...]} or any other dict wrapper to get the list
                 if isinstance(response_json, dict):
-                    # Sometimes models wrap list in a key like "segments"
-                    for key, value in response_json.items():
-                        if isinstance(value, list):
-                            response_json = value
-                            break
-                    if isinstance(response_json, dict):
-                         # verification failed or single object?
-                         response_json = [response_json]
+                    # Prefer "chunks" key (our requested format)
+                    if "chunks" in response_json and isinstance(response_json["chunks"], list):
+                        response_json = response_json["chunks"]
+                    else:
+                        # Fallback: find any list value (e.g. "segments", "items", etc.)
+                        for key, value in response_json.items():
+                            if isinstance(value, list):
+                                response_json = value
+                                break
+                        if isinstance(response_json, dict):
+                            # Single object returned — wrap in list
+                            response_json = [response_json]
 
                 break
             except Exception as e:
@@ -325,7 +345,13 @@ def chunk_sentences_with_llm(sentences, dataset_name, problem_index, model="x-ai
             
         # Process chunks using INDICES
         batch_covered_count = 0
-        
+
+        # Filter out non-dict elements (e.g. stray strings from malformed LLM output)
+        valid_items = [item for item in response_json if isinstance(item, dict)]
+        if len(valid_items) < len(response_json):
+            print(f"Warning: Filtered {len(response_json) - len(valid_items)} non-dict element(s) from LLM response.")
+        response_json = valid_items
+
         for item in response_json:
             start_idx_1based = item.get('start_index')
             end_idx_1based = item.get('end_index')
@@ -655,17 +681,19 @@ def split_sentences(text, skip_llm=False):
     # Return just the sentence strings
     return [item['sentence'] for item in merged_sentences]
 
-def _process_single_item(item, file_path, dataset_name, target_label_dir, skip_llm, raw_only, all_trials=False, model="x-ai/grok-4.1-fast", resume=False):
+def _process_single_item(item, file_path, dataset_name, target_label_dir, skip_llm, raw_only, all_trials=False, model="x-ai/grok-4.1-fast", resume=False, llm_client=None, force_json=False):
     # Support multiple field names for index
     idx = item.get('problem_id')
     if idx is None:
         idx = item.get('index')
     if idx is None:
         idx = item.get('id')
-        
+    if idx is None:
+        idx = item.get('Question ID')
+
     if idx is None:
         return None
-        
+
     # Support multiple field names for instruction/problem text
     instruction = item.get('problem')
     if instruction is None:
@@ -674,19 +702,35 @@ def _process_single_item(item, file_path, dataset_name, target_label_dir, skip_l
         instruction = item.get('question')
     if instruction is None:
         instruction = item.get('text', '')
-    
+
     answer = item.get('answer', '')
-    
+    if not answer:
+        # ThinkARM-style schema
+        answer = item.get('Correct Answer', '')
+
     trials = item.get('trials') or []
     if not trials:
-        trials = [{}]  # Fallback if no trials field exists
+        # ThinkARM-style: top-level Rationale/Response, no trials array.
+        rationale_top = item.get('Rationale') or item.get('rationale')
+        response_top = item.get('Response') or item.get('response') or item.get('generated_text')
+        if rationale_top or response_top:
+            trials = [{
+                'reasoning': rationale_top or '',
+                'generated_text': response_top or '',
+            }]
+        else:
+            trials = [{}]  # Fallback if no trials field exists
     
     if not all_trials:
         trials = trials[:1]
         
     results = []
-    
-    for t_idx, trial in enumerate(trials):
+
+    trial_iter = enumerate(trials)
+    if all_trials and len(trials) > 1:
+        trial_iter = enumerate(tqdm(trials, desc=f"  trials (problem {idx})", unit="trial", leave=False))
+
+    for t_idx, trial in trial_iter:
         # Determine trial identifier (n or index)
         n_val = trial.get('n')
         if not all_trials:
@@ -798,7 +842,7 @@ def _process_single_item(item, file_path, dataset_name, target_label_dir, skip_l
                         "original_end_idx": i
                     })
             else:
-                llm_chunks = chunk_sentences_with_llm(base_sentences, dataset_name, current_idx, model=model)
+                llm_chunks = chunk_sentences_with_llm(base_sentences, dataset_name, current_idx, model=model, client=llm_client, force_json=force_json)
                 if not llm_chunks:
                     print(f"Warning: LLM returned empty chunks for item {current_idx}. Falling back to default sentence splitting.")
                     llm_chunks = []
@@ -843,7 +887,7 @@ def _process_single_item(item, file_path, dataset_name, target_label_dir, skip_l
         
     return results
 
-def process_file(file_path, label_dir, raw_dir, skip_llm=False, raw_only=False, max_workers=10, model="x-ai/grok-4.1-fast", all_trials=False, resume=False):
+def process_file(file_path, label_dir, raw_dir, skip_llm=False, raw_only=False, max_workers=10, model="x-ai/grok-4.1-fast", all_trials=False, resume=False, backend="openrouter", gpu_memory_utilization=0.9, max_model_len=16384, temperature=0.7, max_tokens=4096, top_p=0.8, top_k=20, min_p=0.0, presence_penalty=1.5, repetition_penalty=1.0):
     filename = os.path.basename(file_path)
     dataset_name = os.path.splitext(filename)[0]
     
@@ -878,22 +922,64 @@ def process_file(file_path, label_dir, raw_dir, skip_llm=False, raw_only=False, 
     if resume and target_label_dir and os.path.exists(target_label_dir):
         print("Resume mode enabled: will check existing files for valid coverage before skipping.")
 
+    # Initialize LLM client based on backend
+    llm_client = None
+    if not skip_llm and not raw_only:
+        if backend == "vllm":
+            print(f"Initializing vLLM backend with model: {model}")
+            try:
+                import sys
+                method_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'method')
+                sys.path.insert(0, os.path.abspath(method_dir))
+                from hf_client import HFClient
+            except ImportError as e:
+                print(f"Error: Could not import HFClient for vLLM backend: {e}")
+                print("Make sure vllm is installed and hf_client.py is accessible.")
+                return
+            llm_client = HFClient(
+                model,
+                gpu_memory_utilization=gpu_memory_utilization,
+                max_model_len=max_model_len,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                presence_penalty=presence_penalty,
+                repetition_penalty=repetition_penalty,
+            )
+            # vLLM은 단일 프로세스에서 GPU를 독점하므로 순차 처리
+            max_workers = 1
+            print("vLLM backend: forcing max_workers=1 to avoid GPU conflicts.")
+        else:
+            print(f"Using OpenRouter backend with model: {model}")
+
+    # vLLM 백엔드는 HFClient가 StructuredOutputsParams(json_object=True)로 JSON 출력을 강제
+    force_json = (backend == "vllm")
+
     raw_data_list = []
-    
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_process_single_item, item, file_path, dataset_name, target_label_dir, skip_llm, raw_only, all_trials, model, resume): i for i, item in enumerate(items)}
-        if not futures:
-            print(f"Resume mode: no new items to process for {dataset_name}.")
-            return
-        
-        results_with_index = []
-        for future in tqdm(as_completed(futures), total=len(items), desc=f"Processing {dataset_name}", unit="item"):
-            res = future.result()
-            orig_idx = futures[future]
+    results_with_index = []
+
+    if backend == "vllm":
+        # vLLM은 GPU를 독점하므로 ThreadPoolExecutor 없이 순차 for 루프로 처리
+        for i, item in enumerate(tqdm(items, desc=f"Processing {dataset_name}", unit="item")):
+            res = _process_single_item(item, file_path, dataset_name, target_label_dir, skip_llm, raw_only, all_trials, model, resume, llm_client, force_json)
             if res is not None:
-                results_with_index.append((orig_idx, res))
+                results_with_index.append((i, res))
+    else:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_single_item, item, file_path, dataset_name, target_label_dir, skip_llm, raw_only, all_trials, model, resume, llm_client, force_json): i for i, item in enumerate(items)}
+            if not futures:
+                print(f"Resume mode: no new items to process for {dataset_name}.")
+                return
+
+            for future in tqdm(as_completed(futures), total=len(items), desc=f"Processing {dataset_name}", unit="item"):
+                res = future.result()
+                orig_idx = futures[future]
+                if res is not None:
+                    results_with_index.append((orig_idx, res))
                 
     results_with_index.sort(key=lambda x: x[0])
     raw_data_list = []

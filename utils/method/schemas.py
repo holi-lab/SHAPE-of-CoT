@@ -1,15 +1,17 @@
 """
 Pydantic schemas for structured LLM output validation
 """
-from pydantic import BaseModel, Field, field_validator
+import re
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List
 
 
 class SingleAnnotation(BaseModel):
     """Schema for a single heuristic or non-heuristic tag"""
     code: str = Field(
-        ..., 
-        description="Heuristic or non-heuristic code (e.g., 'H4', 'N2')"
+        ...,
+        description="Heuristic or non-heuristic code (e.g., 'H4a', 'N2'). "
+                    "Use lowercase suffix for sub-codes (e.g., H4a, H13f)."
     )
     evidence: str = Field(
         ..., 
@@ -23,21 +25,19 @@ class SingleAnnotation(BaseModel):
     @field_validator('code')
     @classmethod
     def validate_code(cls, v):
-        """Ensure codes are valid heuristic or non-heuristic codes"""
-        valid_codes = {
-            'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H10', 'H11',
-            'N1', 'N2', 'N3', 'N4'
-        }
-        
-        # Strip whitespace and convert to uppercase
-        code = v.strip().upper()
-        if code not in valid_codes:
-            # Allow sub-codes like H1a, H13b, etc - strip the letter suffix
-            base_code = ''.join(c for c in code if not c.islower())
-            if base_code not in valid_codes:
-                raise ValueError(f"Invalid heuristic code: {code}. Must be one of {valid_codes}")
-        
-        return v.strip().upper()
+        """Ensure codes match H<number>[optional lowercase suffix] or N<number>[optional lowercase suffix].
+        Suffix must be lowercase (e.g. H4a, H13f). Normalizes prefix to uppercase."""
+        code = v.strip()
+        # Normalize: uppercase prefix letter, lowercase suffix
+        # e.g. H11A -> H11a, h4A -> H4a
+        match = re.fullmatch(r'([HNhn])(\d+)([a-zA-Z]?)', code)
+        if not match:
+            raise ValueError(
+                f"Invalid heuristic code: '{code}'. "
+                "Must match pattern H<n>[suffix] or N<n>[suffix] (e.g. H1, H13a, N2)."
+            )
+        prefix, number, suffix = match.groups()
+        return f"{prefix.upper()}{number}{suffix.lower()}"
     
     @field_validator('reasoning', 'evidence')
     @classmethod
@@ -54,14 +54,15 @@ class ChunkAnnotation(BaseModel):
         ..., 
         description="List of annotations for this chunk"
     )
-    has_answer: bool = Field(
-        ...,
-        description="True if the model has produced a final answer in this chunk, otherwise False"
-    )
-    extracted_answer: str | None = Field(
-        None,
-        description="The final answer produced by the model, if has_answer is True."
-    )
+
+    @model_validator(mode='after')
+    def heuristic_first(self):
+        """If any H code is present, remove all N codes (heuristic-first rule)."""
+        codes = [ann.code for ann in self.annotations]
+        has_h = any(c.startswith('H') for c in codes)
+        if has_h:
+            self.annotations = [ann for ann in self.annotations if ann.code.startswith('H')]
+        return self
 
 
 class SentenceAnnotation(BaseModel):

@@ -608,47 +608,17 @@ Now, annotate the current chunk following the heuristic-first approach."""
                                         evidence = evidences[i] if i < len(evidences) else "Extracted from malformed JSON"
                                         reasoning = reasonings[i] if i < len(reasonings) else "Extracted from malformed JSON"
                                         annotations.append({'code': code, 'evidence': evidence, 'reasoning': reasoning})
-                                        
-                                    has_answer_match = re.search(r'"has_answer"\s*:\s*(true|false)', result, re.IGNORECASE)
-                                    extracted_answer_match = re.search(r'"extracted_answer"\s*:\s*"(.*?)"', result, re.DOTALL)
-                                    
-                                    has_answer = False
-                                    if has_answer_match and has_answer_match.group(1).lower() == 'true':
-                                        has_answer = True
-                                        
-                                    extracted_answer = None
-                                    if extracted_answer_match and has_answer:
-                                        extracted_answer = extracted_answer_match.group(1)
-                                        
-                                    response_json = {
-                                        'has_answer': has_answer,
-                                        'extracted_answer': extracted_answer,
-                                        'annotations': annotations
-                                    }
+                                    response_json = {'annotations': annotations}
                                     parse_error = None
                                 else:
                                     # Fallback for old 'codes' array
                                     codes_match = re.search(r'"codes"\s*:\s*\[(.*?)\]', result)
                                     reasoning_match = re.search(r'"reasoning"\s*:\s*"(.*?)"', result, re.DOTALL)
-                                    
-                                    has_answer_match = re.search(r'"has_answer"\s*:\s*(true|false)', result, re.IGNORECASE)
-                                    extracted_answer_match = re.search(r'"extracted_answer"\s*:\s*"(.*?)"', result, re.DOTALL)
-                                    
-                                    has_answer = False
-                                    if has_answer_match and has_answer_match.group(1).lower() == 'true':
-                                        has_answer = True
-                                        
-                                    extracted_answer = None
-                                    if extracted_answer_match and has_answer:
-                                        extracted_answer = extracted_answer_match.group(1)
-                                        
                                     if codes_match:
                                         codes_str = codes_match.group(1)
                                         code_list = [c.strip(' "\'') for c in codes_str.split(',')]
                                         reasoning_str = reasoning_match.group(1) if reasoning_match else 'Extracted from malformed JSON'
                                         response_json = {
-                                            'has_answer': has_answer,
-                                            'extracted_answer': extracted_answer,
                                             'annotations': [{'code': c, 'evidence': '', 'reasoning': reasoning_str} for c in code_list]
                                         }
                                         parse_error = None
@@ -668,7 +638,7 @@ Now, annotate the current chunk following the heuristic-first approach."""
                 print(f"Attempt {retry_count} failed for chunk {idx+1}, retrying... Error: {str(e)}")
                 if retry_count >= max_retries:
                     print(f"Failed to get response after {max_retries} retries. Using default codes.")
-                    response_json = {'has_answer': False, 'extracted_answer': None, 'annotations': [{'code': 'E', 'evidence': '', 'reasoning': 'Failed to annotate'}]}
+                    response_json = {'annotations': [{'code': 'E', 'evidence': '', 'reasoning': 'Failed to annotate'}]}
                     break
         
         # Update chunk with annotations
@@ -680,15 +650,9 @@ Now, annotate the current chunk following the heuristic-first approach."""
             annotated_chunk = {'sentence': str(chunk)}
             
         annotations = response_json.get('annotations', [])
-        has_answer = response_json.get('has_answer', False)
-        extracted_answer = response_json.get('extracted_answer', None)
-        
+
         annotated_chunk['ontology_tag'] = [ann['code'] for ann in annotations]
-        
-        if has_answer:
-            annotated_chunk['has_answer'] = has_answer
-            annotated_chunk['extracted_answer'] = extracted_answer
-        
+
         # Combine evidence and reasoning for each code into a single string for backward compatibility
         reasoning_parts = []
         for ann in annotations:
@@ -698,18 +662,6 @@ Now, annotate the current chunk following the heuristic-first approach."""
             reasoning_parts.append(f"[{code}] Evidence: \"{evidence}\" - {reasoning}")
             
         annotated_chunk['sentence-category-reason'] = "\n".join(reasoning_parts)
-        
-        # --- TEMPORARY BREAKPOINT ---
-        print("\n" + "="*80)
-        print("DEBUG: FIRST CHUNK GENERATION RESULT")
-        print(f"Sentence: {annotated_chunk.get('sentence')}")
-        print(f"Tags: {annotated_chunk.get('ontology_tag')}")
-        print(f"Reasoning:\n{annotated_chunk.get('sentence-category-reason')}")
-        print("="*80 + "\n")
-        import sys
-        print("Breakpoint reached. Exiting as requested.")
-        sys.exit(0)
-        # -----------------------------
 
         annotated_chunks.append(annotated_chunk)
     
@@ -724,7 +676,7 @@ Now, annotate the current chunk following the heuristic-first approach."""
     return annotated_chunks
 
 
-def process_new_data_chunks_stateless(client, chunk_list, problem_text, sample_index, guidebook=True, model="gpt-4.1", output_path='result'):
+def process_new_data_chunks_stateless(client, chunk_list, problem_text, sample_index, guidebook=True, model="gpt-4.1", output_path='result', output_filename=None):
     """
     Process chunks statelessly (without looking at previous tags), suitable for Batch API simulation.
     
@@ -763,8 +715,6 @@ The [Format] section specifies the expected output format."""
     format_prompt = (
         "You should format the output in JSON format with the following structure:\\n"
         "{\\n"
-        "  'has_answer': true or false,\\n"
-        "  'extracted_answer': 'The final answer if has_answer is true, else null',\\n"
         "  'annotations': [\\n"
         "    {\\n"
         "      'code': 'H4',\\n"
@@ -773,7 +723,7 @@ The [Format] section specifies the expected output format."""
         "    }\\n"
         "  ]\\n"
         "}\\n"
-        "The 'annotations' field should be a list of these objects. Each object must contain exactly one 'code'. 'has_answer' is a boolean indicating if the model reached its final answer in this chunk. If true, extract the answer text into 'extracted_answer'."
+        "The 'annotations' field should be a list of these objects. Each object must contain exactly one 'code'."
     )
 
     # Context window size
@@ -920,43 +870,26 @@ The [Format] section specifies the expected output format."""
             annotated_chunk = {'sentence': str(chunk)}
             
         annotations = response_json.get('annotations', [])
-        has_answer = response_json.get('has_answer', False)
-        extracted_answer = response_json.get('extracted_answer', None)
-        
+
         annotated_chunk['ontology_tag'] = [ann['code'] for ann in annotations]
-        
-        if has_answer:
-            annotated_chunk['has_answer'] = has_answer
-            annotated_chunk['extracted_answer'] = extracted_answer
-        
+
         reasoning_parts = []
         for ann in annotations:
             code = ann.get('code', '')
             evidence = ann.get('evidence', '')
             reasoning = ann.get('reasoning', '')
             reasoning_parts.append(f"[{code}] Evidence: \"{evidence}\" - {reasoning}")
-            
+
         annotated_chunk['sentence-category-reason'] = "\n".join(reasoning_parts)
-        
-        # --- TEMPORARY BREAKPOINT ---
-        print("\n" + "="*80)
-        print("DEBUG: FIRST CHUNK GENERATION RESULT")
-        print(f"Sentence: {annotated_chunk.get('sentence')}")
-        print(f"Tags: {annotated_chunk.get('ontology_tag')}")
-        print(f"Reasoning:\n{annotated_chunk.get('sentence-category-reason')}")
-        print("="*80 + "\n")
-        import sys
-        print("Breakpoint reached. Exiting as requested.")
-        sys.exit(0)
-        # -----------------------------
 
         annotated_chunks.append(annotated_chunk)
     
     target_path = f"{output_path}"
     if not os.path.exists(target_path):
         os.makedirs(target_path)
-        
-    with open(f"{target_path}/{sample_index + 1}.json", "w") as f:
+
+    fname = output_filename if output_filename else f"{sample_index + 1}.json"
+    with open(os.path.join(target_path, fname), "w") as f:
         json.dump(annotated_chunks, f, indent=2)
     
     return annotated_chunks
@@ -992,8 +925,6 @@ The [Format] section specifies the expected output format."""
     format_prompt = (
         "You should format the output in JSON format with the following structure:\\n"
         "{\\n"
-        "  'has_answer': true or false,\\n"
-        "  'extracted_answer': 'The final answer if has_answer is true, else null',\\n"
         "  'annotations': [\\n"
         "    {\\n"
         "      'code': 'H4',\\n"
@@ -1002,7 +933,7 @@ The [Format] section specifies the expected output format."""
         "    }\\n"
         "  ]\\n"
         "}\\n"
-        "The 'annotations' field should be a list of these objects. Each object must contain exactly one 'code'. 'has_answer' is a boolean indicating if the model reached its final answer in this chunk. If true, extract the answer text into 'extracted_answer'."
+        "The 'annotations' field should be a list of these objects. Each object must contain exactly one 'code'."
     )
 
     # Build context from previous chunks (TEXT ONLY)
@@ -1104,7 +1035,7 @@ class SemanticSpaceMemory:
         return prompt
 
 
-def process_semantic_space_chunks(client, chunk_list, problem_text, sample_index, guidebook=True, model="gpt-4.1", output_path='result', without_llm=False):
+def process_semantic_space_chunks(client, chunk_list, problem_text, sample_index, guidebook=True, model="gpt-4.1", output_path='result', without_llm=False, output_filename=None):
     # Note: chunk_list already has heuristic tags
     
     # If chunk_list is a dict, check if it's formatted as {"sentences": [...]}
@@ -1229,6 +1160,10 @@ Note: For "MAINTAIN" or "RETURN", do NOT include the "new_space_definition" fiel
         # Reset last_was_h1_h4 if not in without_llm mode
         last_was_h1_h4 = False
 
+        # Skip chunks that don't match any trigger heuristic
+        if not trigger_semantic_space:
+            continue
+
         # Build context prompt
         context_start = max(0, idx - CONTEXT_WINDOW)
         recent_chunks = chunk_list[context_start:idx]
@@ -1308,8 +1243,195 @@ Note: For "MAINTAIN" or "RETURN", do NOT include the "new_space_definition" fiel
     target_path = f"{output_path}"
     if not os.path.exists(target_path):
         os.makedirs(target_path)
-    
-    with open(f"{target_path}/{sample_index + 1}.json", "w") as f:
+
+    fname = output_filename if output_filename else f"{sample_index + 1}.json"
+    with open(os.path.join(target_path, fname), "w") as f:
         json.dump(chunk_list, f, indent=2)
 
     return chunk_list
+
+
+def _parse_chunk_response(result):
+    """
+    Parse a JSON string returned by the model into a dict.
+    Mirrors the multi-strategy parsing used in process_new_data_chunks_stateless.
+    Returns a dict with at least an 'annotations' key, or raises ValueError.
+    """
+    response_json = None
+    parse_error = None
+
+    use_pydantic = False
+    try:
+        from .schemas import ChunkAnnotation
+        use_pydantic = True
+    except ImportError:
+        pass
+
+    if use_pydantic:
+        try:
+            try:
+                raw_json = json.loads(result)
+            except json.JSONDecodeError:
+                fixed = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', result)
+                raw_json = json.loads(fixed)
+            validated = ChunkAnnotation(**raw_json)
+            response_json = validated.model_dump()
+        except Exception as e:
+            parse_error = e
+            response_json = None
+
+    if response_json is None:
+        try:
+            response_json = json.loads(result)
+            parse_error = None
+        except json.JSONDecodeError as e:
+            parse_error = e
+            fixed = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', result)
+            try:
+                response_json = json.loads(fixed)
+                parse_error = None
+            except json.JSONDecodeError:
+                try:
+                    code_matches = re.finditer(r'"code"\s*:\s*"(.*?)"', result)
+                    evidence_matches = re.finditer(r'"evidence"\s*:\s*"(.*?)"', result, re.DOTALL)
+                    reasoning_matches = re.finditer(r'"reasoning"\s*:\s*"(.*?)"', result, re.DOTALL)
+                    codes = [m.group(1) for m in code_matches]
+                    evidences = [m.group(1) for m in evidence_matches]
+                    reasonings = [m.group(1) for m in reasoning_matches]
+                    if codes:
+                        annotations = []
+                        for i, code in enumerate(codes):
+                            evidence = evidences[i] if i < len(evidences) else "Extracted from malformed JSON"
+                            reasoning = reasonings[i] if i < len(reasonings) else "Extracted from malformed JSON"
+                            annotations.append({'code': code, 'evidence': evidence, 'reasoning': reasoning})
+                        response_json = {'annotations': annotations}
+                        parse_error = None
+                    else:
+                        codes_match = re.search(r'"codes"\s*:\s*\[(.*?)\]', result)
+                        reasoning_match = re.search(r'"reasoning"\s*:\s*"(.*?)"', result, re.DOTALL)
+                        if codes_match:
+                            codes_str = codes_match.group(1)
+                            code_list = [c.strip(' "\'') for c in codes_str.split(',')]
+                            reasoning_str = reasoning_match.group(1) if reasoning_match else 'Extracted from malformed JSON'
+                            response_json = {'annotations': [{'code': c, 'evidence': '', 'reasoning': reasoning_str} for c in code_list]}
+                            parse_error = None
+                except Exception:
+                    pass
+
+    if response_json is None:
+        raise ValueError(f"Failed to parse JSON: {str(parse_error)}")
+    if 'annotations' not in response_json:
+        raise ValueError("Response missing 'annotations' field")
+    return response_json
+
+
+def _build_annotated_chunk(chunk, response_json):
+    """Convert a raw chunk dict + parsed response_json into an annotated chunk dict."""
+    if isinstance(chunk, dict):
+        annotated_chunk = chunk.copy()
+    else:
+        annotated_chunk = {'sentence': str(chunk)}
+
+    annotations = response_json.get('annotations', [])
+
+    annotated_chunk['ontology_tag'] = [ann['code'] for ann in annotations]
+
+    reasoning_parts = []
+    for ann in annotations:
+        code = ann.get('code', '')
+        evidence = ann.get('evidence', '')
+        reasoning = ann.get('reasoning', '')
+        reasoning_parts.append(f"[{code}] Evidence: \"{evidence}\" - {reasoning}")
+    annotated_chunk['sentence-category-reason'] = "\n".join(reasoning_parts)
+    return annotated_chunk
+
+
+def process_new_data_chunks_stateless_batch(hf_client, chunk_list, problem_text,
+                                            sample_index, model, guidebook=True,
+                                            output_path='result', max_retries=5,
+                                            output_filename=None):
+    """
+    Batch-optimised stateless annotation using vLLM's native batch inference.
+
+    Instead of calling the model once per chunk, this function:
+      1. Builds all prompts up front (using generate_stateless_messages).
+      2. Calls hf_client.chat.completions.create_batch() once for the entire chunk list.
+      3. Parses each response and assembles annotated_chunks in order.
+
+    Failed chunks are retried individually (up to max_retries times) to avoid
+    reprocessing the whole batch on a single parse error.
+
+    Args:
+        hf_client: HFClient instance (must have chat.completions.create_batch).
+        chunk_list: List of chunk dicts from the chunked JSON file.
+        problem_text: Original math problem text.
+        sample_index: 0-based index used to name the output file.
+        model: Model name string.
+        guidebook: Whether to include the heuristics guidebook in prompts.
+        output_path: Directory to write results to.
+        max_retries: How many times to retry a failed individual chunk.
+
+    Returns:
+        list: Annotated chunk list.
+    """
+    if isinstance(chunk_list, dict):
+        if 'sentences' in chunk_list and isinstance(chunk_list['sentences'], list):
+            chunk_list = chunk_list['sentences']
+        else:
+            chunk_list = list(chunk_list.values())
+
+    guidebook_text = guidebook_heuristics_prompt if guidebook else None
+
+    # Build all messages up front
+    all_messages = [
+        generate_stateless_messages(
+            chunk=chunk,
+            chunk_idx=idx,
+            chunk_list=chunk_list,
+            problem_text=problem_text,
+            guidebook_text=guidebook_text,
+        )
+        for idx, chunk in enumerate(chunk_list)
+    ]
+
+    print(f"Running vLLM batch inference for {len(all_messages)} chunks...")
+    responses = hf_client.chat.completions.create_batch(
+        model=model,
+        messages_list=all_messages,
+        response_format={"type": "json_object"},
+    )
+
+    annotated_chunks = []
+    for idx, (chunk, response) in enumerate(zip(chunk_list, responses)):
+        result = response.choices[0].message.content
+        response_json = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                response_json = _parse_chunk_response(result)
+                break
+            except Exception as e:
+                print(f"Chunk {idx+1}: parse attempt {attempt}/{max_retries} failed — {e}")
+                if attempt == max_retries:
+                    print(f"Chunk {idx+1}: giving up, using fallback annotation.")
+                    response_json = {'annotations': [{'code': 'E', 'evidence': '', 'reasoning': 'Failed to annotate'}]}
+                else:
+                    # Retry the individual chunk via single-request path
+                    try:
+                        retry_resp = hf_client.chat.completions.create(
+                            model=model,
+                            messages=all_messages[idx],
+                            response_format={"type": "json_object"},
+                        )
+                        result = retry_resp.choices[0].message.content
+                    except Exception as retry_e:
+                        print(f"Chunk {idx+1}: retry inference failed — {retry_e}")
+
+        annotated_chunks.append(_build_annotated_chunk(chunk, response_json))
+
+    target_path = str(output_path)
+    os.makedirs(target_path, exist_ok=True)
+    fname = output_filename if output_filename else f"{sample_index + 1}.json"
+    with open(os.path.join(target_path, fname), "w") as f:
+        json.dump(annotated_chunks, f, indent=2)
+
+    return annotated_chunks
