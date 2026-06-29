@@ -152,4 +152,11 @@ The dataset will be released upon publication. Stay tuned.
 
 ## Citation
 
-*Coming soon.*
+@inproceedings{
+song2026shape,
+title={{SHAPE} of Chain-of-Thought in Math Reasoning},
+author={Jonghyun Song and Sangjun Song and Minjae Oh and Haesung Pyun and SungSik Lee and Yohan Jo},
+booktitle={3rd AI for Math Workshop: Toward Self-Evolving Scientific Agents},
+year={2026},
+url={https://openreview.net/forum?id=U7tkXcVkV3}
+}
