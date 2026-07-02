@@ -1,6 +1,7 @@
 # SHAPE: Semantic-space and Heuristic Analysis for Problem-solving Evolution
 
 [📄 Paper LINK](https://github.com/holi-lab/SHAPE-of-CoT/blob/main/Paper/ICMLW.pdf)
+<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/12eb6286-14df-4d89-a42b-aafefbce2386" />
 
 SHAPE analyzes Chain-of-Thought (CoT) in math reasoning at the level where problem solving actually happens: not only surface text, self-revision markers, or generic reasoning episodes, but the model’s evolving mathematical interpretation of the problem.
 
